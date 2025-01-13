@@ -1,1 +1,254 @@
-ikun
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>元梦农场计算器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        .input-wrapper {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 0 10px;
+            font-size: 16px;
+            height: 40px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+
+        .input-wrapper input {
+            border-radius: 4px 0 0 4px; /* 左侧圆角 */
+        }
+
+        button {
+            height: 40px;
+            padding: 0 15px;
+            font-size: 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: 1px solid #4CAF50;
+            border-radius: 0 4px 4px 0; /* 右侧圆角 */
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .result {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+
+        .format-info {
+            display: block;
+            margin-top: 10px;
+            font-size: 0.9em;
+            background-color: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .watering {
+            align-items: center;
+        }
+
+        input {
+            flex: 1;
+            min-width: 0;
+        }
+    </style>
+</head>
+<script src="js/vue.js"></script>
+<body>
+
+<div class="container" id="app">
+    <h1>植物最早成熟时间</h1>
+
+    <label class="watering">
+        <input type="checkbox" v-model="watering">刚浇完水
+    </label>
+    <div v-show="!watering">
+        <div style="display: flex;gap: 10px">
+            <div style="flex: 1">
+                <label for="overtime">水分维持时间延长</label>
+                <div class="input-wrapper">
+                    <input type="text" id="overtime" size="1" placeholder="请输入整数" v-model.number="overtime"
+                           v-validate-integer required>%
+                </div>
+            </div>
+            <div style="flex: 1">
+                <label for="plantType">植物时长类型</label>
+                <div class="input-wrapper">
+                    <input type="text" id="plantType" size="1" placeholder="请输入整数" v-model.number="plantType"
+                           v-validate-integer>小时
+                </div>
+            </div>
+        </div>
+        <label for="remainMaintenance">剩余维持时间</label>
+        <div class="input-wrapper">
+            <input type="text" id="remainMaintenance" placeholder="请输入" v-model="remainMaintenance" v-validate-time>
+        </div>
+    </div>
+    <!--<label for="currentTime">当前时间</label>-->
+    <!--<div class="input-group">-->
+    <!--    <input type="text" id="currentTime" placeholder="请输入" v-model="currentTime">-->
+    <!--    <button @click="fillCurrentTime">自动获取</button>-->
+    <!--</div>-->
+
+    <label for="autoMatureTime">自动成熟时间</label>
+    <div class="input-wrapper">
+        <input type="text" id="autoMatureTime" placeholder="请输入" v-model="autoMatureTime" v-validate-time>
+    </div>
+
+    <button @click="calculateMaturity"
+            style="width: 100%; height: 40px; background-color: #4CAF50; color: white; border: none; border-radius: 4px; font-size: 16px;">
+        计算
+    </button>
+
+    <div class="result" id="result" v-html="resultText"></div>
+
+    <div class="format-info" id="formatInfo">
+        <p>输入格式说明：</p>
+        <ul>
+            <li><strong>HH:mm</strong> - 不跨天的时间，例如 "10:30"。</li>
+            <li><strong>D:HH:mm</strong> - 跨天的时间，其中 D 表示天数，例如 "1:15:30" 表示下一天15:30。</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+    new Vue({
+        el: '#app',
+        data: {
+            watering: true,
+            // maxMaintenance: "05:20",
+            remainMaintenance: "",
+            currentTime: "",
+            autoMatureTime: "",
+            resultText: "",
+            plantType: 16,
+            overtime: 0
+        },
+        mounted(){
+          this.overtime = localStorage.getItem("overtime");
+          this.plantType = localStorage.getItem("plantType");
+        },
+        methods: {
+
+            fillCurrentTime() {
+                const now = new Date();
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                this.currentTime = `${hours}:${minutes}`;
+            },
+
+            parseTimeToTotalMinutes(inputStr) {
+                inputStr = inputStr.replaceAll("：", ':')
+                const parts = inputStr.split(':').map((part) => parseInt(part, 10));
+                if (parts.length === 3) {
+                    const [days, hours, minutes] = parts;
+                    return (days * 24 + hours) * 60 + minutes;
+                } else if (parts.length === 2) {
+                    const [hours, minutes] = parts;
+                    return hours * 60 + minutes;
+                } else if (parts.length === 1) {
+                    return parts[0]
+                } else {
+                    throw new Error("输入格式不正确，需为 D:HH:mm 或 HH:mm");
+                }
+            },
+
+            /**
+             *  当前+(最早-当前)(1+1/4)=自动
+             *  =>最早=(4自动+当前)/5
+             * */
+            calculateMatureTime(currentTotalMinutes, autoTotalMinutes, remainMaintenance, maxMaintenance) {
+                autoTotalMinutes -= (maxMaintenance - remainMaintenance) / 4
+                const earliestTotalMinutes = Math.floor((4 * autoTotalMinutes + currentTotalMinutes) / 5);
+                const earliestHours = Math.floor(earliestTotalMinutes / 60);
+                const earliestMinutes = earliestTotalMinutes % 60;
+
+                return {hours: earliestHours, minutes: earliestMinutes};
+            },
+
+            calculateMaturity() {
+                try {
+                    let required = this.autoMatureTime;
+                    if (this.currentTime === "") {
+                        this.fillCurrentTime()
+                    }
+                    const currentTime = this.parseTimeToTotalMinutes(this.currentTime);
+                    const autoMatureTime = this.parseTimeToTotalMinutes(this.autoMatureTime);
+                    let remainMaintenance = 0
+                    let maxMaintenance = 0
+                    if (!this.watering) {
+                        required&&=this.remainMaintenance&&this.plantType&&this.overtime
+                        remainMaintenance = this.parseTimeToTotalMinutes(this.remainMaintenance);
+                        maxMaintenance = (this.plantType * 60 / 3) * (100 + this.overtime) / 100;
+                    }
+                    if(!required){
+                        throw new Error("请填写完整");
+                    }
+                    const matureTime = this.calculateMatureTime(currentTime, autoMatureTime, remainMaintenance, maxMaintenance);
+                    let result;
+                    if (matureTime.hours >= 24) {
+                        const days = Math.floor(matureTime.hours / 24);
+                        const hours = matureTime.hours % 24;
+                        result = `${days}:${String(hours).padStart(2, '0')}:${String(matureTime.minutes).padStart(2, '0')}`;
+                    } else {
+                        result = `${String(matureTime.hours).padStart(2, '0')}:${String(matureTime.minutes).padStart(2, '0')}`;
+                    }
+                    this.resultText = `最早成熟时间为: ${result}`;
+                    localStorage.setItem("overtime", this.overtime)
+                    localStorage.setItem("plantType", this.plantType)
+                } catch (error) {
+                    this.resultText = `<div style="color: red">错误: ${error.message}<div>`;
+                }
+            },
+        },
+        directives: {
+            validateInteger: {
+                bind(el) {
+                    el.addEventListener('input', function (event) {
+                        event.target.value = event.target.value.replace(new RegExp(`[^0-9-]`, 'g'), '');
+                        el.dispatchEvent(new Event('input'));  // 手动触发input事件，更新v-model
+                    });
+                }
+            },
+            validateTime: {
+                bind(el) {
+                    el.addEventListener('input', function (event) {
+                        // 只允许数字、中文冒号（：）、英文冒号（:）
+                        event.target.value = event.target.value.replace(/[^0-9：:]/g, '');
+                        el.dispatchEvent(new Event('input'));  // 手动触发input事件，更新v-model
+                    });
+                }
+            }
+        }
+    });
+</script>
+
+</body>
+</html>
